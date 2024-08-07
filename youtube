@@ -1,0 +1,37 @@
+#!/bin/bash
+
+mpc -q stop
+mpc -q clear
+
+query=$( echo "$*" | sed 's/ /+/g')
+invidious="https://invidious.jing.rocks"
+url="${invidious}/search?q=${query}"
+echo "getting search result..."
+html=$(curl -s "$url")
+count=1
+
+echo "select your desired video"
+index=$(echo "$html" | pup "#contents .pure-g .h-box .video-card-row > a p text{}" | awk '{print NR,$0}' | fzf --with-nth 2.. | awk '{print $1}')
+vid_id=$(echo "$html" | pup "#contents .pure-g .h-box .video-card-row > a attr{href}" | awk "NR==${index}")
+duration=$(echo "$html" | pup "#contents .pure-g .h-box .thumbnail .bottom-right-overlay p text{}" | awk -F":" -v ind="${index}" 'NR==ind {print ($1*60)+$2 -5 }')
+vid_url="https://www.youtube.com${vid_id}"
+echo "getting audio file..."
+yt-dlp --quiet --no-warnings -f bestaudio --audio-format opus --extract-audio "$vid_url" -o "/tmp/ytmusic${count}.opus"
+echo "playing song"
+mpc -q add "/tmp/ytmusic${count}.opus"
+mpc -q play
+
+while true; do
+sleep "$duration"
+count=$((count+1))
+echo "getting next song..."
+html=$(curl -s "${invidious}${vid_id}")
+vid_id=$(echo "$html" | pup "#contents .pure-g .h-box .video-card-row > a attr{href}" | awk -F";" 'NR==1 {print $1}' )
+duration=$(echo "$html" | pup "#contents .pure-g .h-box .thumbnail .bottom-right-overlay p text{}" | head -n 1 |  awk -F":" '{print ($1*60)+$2 -5}')
+vid_url="https://www.youtube.com${vid_id}"
+echo "getting audio file..."
+yt-dlp --quiet --no-warnings -f bestaudio --audio-format opus --extract-audio "$vid_url" -o "/tmp/ytmusic${count}.opus"
+echo "playing next song"
+mpc -q add "/tmp/ytmusic${count}.opus"
+mpc -q play
+done
